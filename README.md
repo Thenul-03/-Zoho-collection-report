@@ -55,20 +55,63 @@ environment variable in Vercel, and redeploy.
 That's the only manual step. From here on, the deployed app runs
 independently — no one needs to touch localhost or a terminal again.
 
-## 5. Generate a report
+## 5. Generate a report — the easy way (preview page)
 
-Visit:
+Just visit your site's homepage:
+
+```
+https://your-project.vercel.app/
+```
+
+Pick a From/To date and paste in your `REPORT_ACCESS_KEY` once (it's
+remembered in that browser after the first time). Click **Run Report** and
+the page pulls the payments straight from Zoho Books and shows them in a
+table right there — same live-connection pattern as the cheque-writer tool's
+"Recent Payments" list, with a green **Zoho Connected** / red **Zoho
+Disconnected** badge in the top right so you always know whether the
+connection to Zoho is working before you trust the numbers.
+
+Once you're happy with the preview, click **Download Excel** to get the same
+`.xlsx` file the old button used to generate directly.
+
+Under the hood this preview is powered by a new endpoint, `/api/data.js`,
+which shares all of its Zoho-fetching logic with `/api/report.js` via
+`lib/zoho.js` — so the numbers on screen and the numbers in the Excel file
+can never drift apart; add a payment mode or account mapping once and both
+update.
+
+### Or generate a report directly by URL (no preview)
 
 ```
 https://your-project.vercel.app/api/report?key=YOUR_REPORT_ACCESS_KEY&from=2026-09-01&to=2026-09-01
 ```
 
-This downloads an `.xlsx` file for that date range, pivoted into the
-school's template layout.
+### Or fetch the raw JSON (e.g. to build another view)
+
+```
+https://your-project.vercel.app/api/data?key=YOUR_REPORT_ACCESS_KEY&from=2026-09-01&to=2026-09-01
+```
+
+## 5b. If Admission Number comes back blank
+
+Visit the same URL with `&debug=1` added, e.g.:
+
+```
+https://your-project.vercel.app/api/report?key=YOUR_REPORT_ACCESS_KEY&from=2026-09-01&to=2026-09-01&debug=1
+```
+
+Instead of downloading a file, this shows raw JSON: one sample payment and
+its full Contact record exactly as Zoho returns it. Look inside
+`sample_contact.contact.custom_fields` (or `custom_field_hash`) for how your
+Admission Number field is actually labeled — Zoho's API sometimes uses a
+slightly different label than what's shown in the UI. If it doesn't match
+`admission number` (case/spacing-insensitive), open `api/report.js` and
+update the `ADMISSION_FIELD_LABEL` constant near `extractAdmissionNumber` to
+match exactly what you see.
 
 ## 6. Adjust the mappings for your organization
 
-Open `api/report.js` and edit the two maps near the top:
+Open `lib/zoho.js` and edit the two maps near the top:
 
 - `PAYMENT_MODE_TO_COLUMN` — maps Zoho's `payment_mode` values (e.g.
   `cash`, `creditcard`) to the Cash/Chq/CC/DT/MY FEES columns. Check your

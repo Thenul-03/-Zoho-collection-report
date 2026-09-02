@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Daily Collection Report</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg: #0f1720;
+    --panel: #161f2b;
+    --border: #26313f;
+    --text: #e7edf3;
+    --muted: #8ea0b3;
+    --accent: #2dd4bf;
+    --accent-dark: #14b8a6;
+    --red: #f87171;
+    --green: #34d399;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, Segoe UI, Arial, sans-serif;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .topbar h1 { font-size: 17px; margin: 0; }
+  .topbar p { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+  .badge {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .badge.connected { color: var(--green); background: rgba(52,211,153,0.12); }
+  .badge.disconnected { color: var(--red); background: rgba(248,113,113,0.12); }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 24px 60px; }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 20px;
+  }
+  .filters {
+    display: flex;
+    gap: 14px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .field input {
+    background: #0c131b;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 10px;
+    border-radius: 6px;
+    font-size: 14px;
+    min-width: 150px;
+  }
+  .field input:focus { outline: none; border-color: var(--accent); }
+
+  button {
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: #05221d; }
+  button.primary:hover { background: var(--accent-dark); }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button.secondary:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  .forget { font-size: 11px; color: var(--muted); cursor: pointer; text-decoration: underline; }
+
+  #status { margin-top: 10px; font-size: 13px; color: var(--muted); min-height: 18px; }
+  #status.error { color: var(--red); }
+
+  .summary { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 4px; }
+  .summary .stat {
+    background: #0c131b;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    min-width: 90px;
+  }
+  .summary .stat .label { font-size: 11px; color: var(--muted); }
+  .summary .stat .value { font-size: 16px; font-weight: 700; margin-top: 2px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 10px;
+    position: sticky;
+    top: 0;
+    background: var(--panel);
+  }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid var(--border); }
+  tbody tr:hover { background: rgba(45,212,191,0.05); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tfoot td { padding: 10px; font-weight: 700; border-top: 2px solid var(--border); }
+  .table-scroll { overflow-x: auto; }
+  .empty { color: var(--muted); font-size: 13px; padding: 30px 0; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h1>Daily Collection Report</h1>
+      <p>Live from Zoho Books — preview, then download as Excel.</p>
+    </div>
+    <div class="badge disconnected" id="connBadge"><span class="dot"></span><span id="connBadgeText">Checking Zoho…</span></div>
+  </div>
+
+  <div class="wrap">
+    <div class="panel">
+      <form id="reportForm" class="filters">
+        <div class="field">
+          <label for="from">From date</label>
+          <input type="date" id="from" required />
+        </div>
+        <div class="field">
+          <label for="to">To date</label>
+          <input type="date" id="to" required />
+        </div>
+        <div class="field">
+          <label for="accessKey">Access key</label>
+          <input type="password" id="accessKey" placeholder="Report access key" required />
+        </div>
+        <button type="submit" class="primary" id="runBtn">Run Report</button>
+        <button type="button" class="secondary" id="downloadBtn" disabled>Download Excel</button>
+      </form>
+      <div id="status"></div>
+      <span class="forget" id="forgetKey">Forget saved key</span>
+    </div>
+
+    <div class="panel" id="resultsPanel" style="display:none;">
+      <div class="summary" id="summary"></div>
+      <div class="table-scroll">
+        <table id="reportTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Receipt No</th>
+              <th>Admission No</th>
+              <th>Student Name</th>
+              <th>Details</th>
+              <th>Mode</th>
+              <th class="num">Cash</th>
+              <th class="num">Chq</th>
+              <th class="num">CC</th>
+              <th class="num">DT</th>
+              <th class="num">MY FEES</th>
+              <th>Bank</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+          <tfoot id="tableFoot"></tfoot>
+        </table>
+      </div>
+      <div class="empty" id="emptyMsg" style="display:none;">No payments found for this date range.</div>
+    </div>
+  </div>
+
+  <script>
+    const fromInput = document.getElementById('from');
+    const toInput = document.getElementById('to');
+    const keyInput = document.getElementById('accessKey');
+    const status = document.getElementById('status');
+    const form = document.getElementById('reportForm');
+    const runBtn = document.getElementById('runBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const connBadge = document.getElementById('connBadge');
+    const connBadgeText = document.getElementById('connBadgeText');
+    const resultsPanel = document.getElementById('resultsPanel');
+    const tableBody = document.getElementById('tableBody');
+    const tableFoot = document.getElementById('tableFoot');
+    const summary = document.getElementById('summary');
+    const emptyMsg = document.getElementById('emptyMsg');
+
+    const today = new Date().toISOString().slice(0, 10);
+    fromInput.value = today;
+    toInput.value = today;
+
+    // Remember the access key locally in this browser only — never sent
+    // anywhere except this site's own /api endpoints.
+    const savedKey = localStorage.getItem('reportAccessKey');
+    if (savedKey) keyInput.value = savedKey;
+
+    document.getElementById('forgetKey').addEventListener('click', () => {
+      localStorage.removeItem('reportAccessKey');
+      keyInput.value = '';
+      status.textContent = 'Saved key cleared from this browser.';
+      status.className = '';
+    });
+
+    function setConnBadge(connected, label) {
+      connBadge.className = 'badge ' + (connected ? 'connected' : 'disconnected');
+      connBadgeText.textContent = label || (connected ? 'Zoho Connected' : 'Zoho Disconnected');
+    }
+
+    function money(n) {
+      if (n === null || n === undefined || n === 0) return '—';
+      return Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    let lastFrom = null, lastTo = null, lastKey = null;
+
+    async function runReport(e) {
+      if (e) e.preventDefault();
+      const from = fromInput.value;
+      const to = toInput.value;
+      const key = keyInput.value.trim();
+
+      if (!from || !to || !key) {
+        status.textContent = 'Please fill in all fields.';
+        status.className = 'error';
+        return;
+      }
+
+      localStorage.setItem('reportAccessKey', key);
+      runBtn.disabled = true;
+      downloadBtn.disabled = true;
+      status.textContent = 'Loading from Zoho…';
+      status.className = '';
+
+      try {
+        const resp = await fetch(`/api/data?key=${encodeURIComponent(key)}&from=${from}&to=${to}`);
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+          setConnBadge(!!data.connected);
+          status.textContent = data.error || 'Something went wrong loading the report.';
+          status.className = 'error';
+          resultsPanel.style.display = 'none';
+          return;
+        }
+
+        setConnBadge(true);
+        renderTable(data);
+        lastFrom = from; lastTo = to; lastKey = key;
+        downloadBtn.disabled = false;
+        status.textContent = `Loaded ${data.count} payment${data.count === 1 ? '' : 's'} for ${from} to ${to}.`;
+      } catch (err) {
+        setConnBadge(false);
+        status.textContent = 'Network error: ' + err.message;
+        status.className = 'error';
+      } finally {
+        runBtn.disabled = false;
+      }
+    }
+
+    function renderTable(data) {
+      resultsPanel.style.display = 'block';
+      tableBody.innerHTML = '';
+      tableFoot.innerHTML = '';
+
+      const stats = [
+        ['Payments', data.count],
+        ['Cash', money(data.totals.Cash)],
+        ['Chq', money(data.totals.Chq)],
+        ['CC', money(data.totals.CC)],
+        ['DT', money(data.totals.DT)],
+        ['MY FEES', money(data.totals['MY FEES'])],
+      ];
+      summary.innerHTML = stats.map(([label, value]) =>
+        `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div></div>`
+      ).join('');
+
+      if (!data.rows.length) {
+        emptyMsg.style.display = 'block';
+        return;
+      }
+      emptyMsg.style.display = 'none';
+
+      for (const r of data.rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${r.date || ''}</td>
+          <td>${r.receiptNo || ''}</td>
+          <td>${r.admissionNumber || '*'}</td>
+          <td>${r.studentName || '*'}</td>
+          <td>${r.details || '*'}</td>
+          <td>${r.paymentMode || ''}</td>
+          <td class="num">${r.cash !== null ? money(r.cash) : ''}</td>
+          <td class="num">${r.chq !== null ? money(r.chq) : ''}</td>
+          <td class="num">${r.cc !== null ? money(r.cc) : ''}</td>
+          <td class="num">${r.dt !== null ? money(r.dt) : ''}</td>
+          <td class="num">${r.myFees !== null ? money(r.myFees) : ''}</td>
+          <td>${r.bank || ''}</td>
+        `;
+        tableBody.appendChild(tr);
+      }
+
+      const t = data.totals;
+      const tfootRow = document.createElement('tr');
+      tfootRow.innerHTML = `
+        <td colspan="6">TOTAL</td>
+        <td class="num">${money(t.Cash)}</td>
+        <td class="num">${money(t.Chq)}</td>
+        <td class="num">${money(t.CC)}</td>
+        <td class="num">${money(t.DT)}</td>
+        <td class="num">${money(t['MY FEES'])}</td>
+        <td></td>
+      `;
+      tableFoot.appendChild(tfootRow);
+    }
+
+    downloadBtn.addEventListener('click', () => {
+      if (!lastFrom || !lastTo || !lastKey) return;
+      const url = `/api/report?key=${encodeURIComponent(lastKey)}&from=${lastFrom}&to=${lastTo}`;
+      window.location.href = url;
+    });
+
+    form.addEventListener('submit', runReport);
+
+    // On load, do a lightweight check with today's date so the connection
+    // badge reflects real status right away (same idea as the cheque-writer's
+    // "Zoho Connected" indicator).
+    window.addEventListener('DOMContentLoaded', () => {
+      if (savedKey) runReport();
+    });
+  </script>
+</body>
+</html>

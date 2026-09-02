@@ -1,34 +1,13 @@
 import ExcelJS from 'exceljs';
-
-// ---- EDIT THESE TWO MAPS TO MATCH YOUR ORGANIZATION -----------------------
-
-// Zoho's payment_mode value -> which template column it should land in.
-// Check your own Zoho Books org's exact mode names under
-// Settings > Sales > Customer Payments (or just log `payment_mode` once and see).
-const PAYMENT_MODE_TO_COLUMN = {
-  cash: 'Cash',
-  check: 'Chq',
-  cheque: 'Chq',
-  creditcard: 'CC',
-  'credit card': 'CC',
-  banktransfer: 'DT',
-  'bank transfer': 'DT',
-  myfees: 'MY FEES',
-  'my fees': 'MY FEES',
-};
-
-// Zoho "deposit to" account name -> short label shown in the Bank column.
-// Add every account your school actually deposits into.
-const ACCOUNT_TO_BANK_LABEL = {
-  'Cash in Hand': '-',
-  'Seylan Bank C/A - 30013197592001': 'SEYLAN',
-  'Online Payment Clearing / MyFees Control': '-',
-};
-
-// ---------------------------------------------------------------------------
+import {
+  getAccessToken,
+  fetchAllPayments,
+  fetchAdmissionNumbers,
+  buildReportRows,
+} from '../lib/zoho.js';
 
 export default async function handler(req, res) {
-  const { key, from, to } = req.query;
+  const { key, from, to, debug } = req.query;
 
   if (!process.env.REPORT_ACCESS_KEY || key !== process.env.REPORT_ACCESS_KEY) {
     res.status(401).send('Unauthorized. Pass the correct ?key= value.');
@@ -42,8 +21,31 @@ export default async function handler(req, res) {
   try {
     const accessToken = await getAccessToken();
     const payments = await fetchAllPayments(accessToken, from, to);
+
+    // Debug mode: add &debug=1 to the URL to see the RAW contact JSON for the
+    // first payment in the range, instead of downloading a file. Use this to
+    // find the exact custom field name/label Zoho is actually returning.
+    if (debug === '1') {
+      const apiDomain = process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com';
+      const orgId = process.env.ZOHO_ORGANIZATION_ID;
+      const firstPayment = payments[0];
+      if (!firstPayment) {
+        res.status(200).json({ message: 'No payments found in this date range.' });
+        return;
+      }
+      const url = `${apiDomain}/books/v3/contacts/${firstPayment.customer_id}?organization_id=${orgId}`;
+      const resp = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${accessToken}` } });
+      const contactData = await resp.json();
+      res.status(200).json({
+        sample_payment: firstPayment,
+        sample_contact: contactData,
+      });
+      return;
+    }
+
     const admissionNumbers = await fetchAdmissionNumbers(accessToken, payments);
-    const buffer = await buildWorkbook(payments, admissionNumbers, from, to);
+    const { rows, totals } = buildReportRows(payments, admissionNumbers);
+    const buffer = await buildWorkbook(rows, totals, from, to);
 
     res.setHeader(
       'Content-Type',
@@ -60,104 +62,9 @@ export default async function handler(req, res) {
   }
 }
 
-// --- Zoho auth -------------------------------------------------------------
-
-async function getAccessToken() {
-  const domain = process.env.ZOHO_ACCOUNTS_DOMAIN || 'https://accounts.zoho.com';
-  const params = new URLSearchParams({
-    grant_type: 'refresh_token',
-    client_id: process.env.ZOHO_CLIENT_ID,
-    client_secret: process.env.ZOHO_CLIENT_SECRET,
-    refresh_token: process.env.ZOHO_REFRESH_TOKEN,
-  });
-
-  const resp = await fetch(`${domain}/oauth/v2/token`, { method: 'POST', body: params });
-  const data = await resp.json();
-  if (!data.access_token) {
-    throw new Error('Failed to refresh access token: ' + JSON.stringify(data));
-  }
-  return data.access_token;
-}
-
-// --- Zoho data fetching ------------------------------------------------------
-
-async function fetchAllPayments(accessToken, from, to) {
-  const apiDomain = process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com';
-  const orgId = process.env.ZOHO_ORGANIZATION_ID;
-
-  let page = 1;
-  let all = [];
-
-  while (true) {
-    const url =
-      `${apiDomain}/books/v3/customerpayments?organization_id=${orgId}` +
-      `&date_start=${from}&date_end=${to}&page=${page}&per_page=200&sort_column=date`;
-
-    const resp = await fetch(url, {
-      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
-    });
-    const data = await resp.json();
-
-    if (data.code !== 0) {
-      throw new Error('Zoho API error fetching payments: ' + JSON.stringify(data));
-    }
-
-    all = all.concat(data.customerpayments || []);
-
-    if (!data.page_context || !data.page_context.has_more_page) break;
-    page++;
-  }
-
-  return all;
-}
-
-// Admission Number lives on the Customer/Contact record's custom fields,
-// not on the payment itself — so we fetch each distinct customer once and
-// cache the result.
-async function fetchAdmissionNumbers(accessToken, payments) {
-  const apiDomain = process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com';
-  const orgId = process.env.ZOHO_ORGANIZATION_ID;
-
-  const uniqueCustomerIds = [...new Set(payments.map((p) => p.customer_id).filter(Boolean))];
-  const result = {};
-
-  for (const customerId of uniqueCustomerIds) {
-    const url = `${apiDomain}/books/v3/contacts/${customerId}?organization_id=${orgId}`;
-    const resp = await fetch(url, {
-      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
-    });
-    const data = await resp.json();
-
-    if (data.code !== 0 || !data.contact) {
-      result[customerId] = '';
-      continue;
-    }
-
-    const cf = (data.contact.custom_fields || []).find(
-      (f) => (f.label || f.customfield_name || '').toLowerCase() === 'admission number'
-    );
-    result[customerId] = cf ? cf.value : '';
-  }
-
-  return result;
-}
-
-// --- Helpers to map Zoho values onto the template's columns ----------------
-
-function columnForPaymentMode(mode) {
-  if (!mode) return null;
-  const key = mode.toLowerCase().trim();
-  return PAYMENT_MODE_TO_COLUMN[key] || null;
-}
-
-function bankLabelForAccount(accountName) {
-  if (!accountName) return '-';
-  return ACCOUNT_TO_BANK_LABEL[accountName] || accountName;
-}
-
 // --- Build the workbook ------------------------------------------------------
 
-async function buildWorkbook(payments, admissionNumbers, from, to) {
+async function buildWorkbook(rows, totals, from, to) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Daily Collection');
 
@@ -207,28 +114,23 @@ async function buildWorkbook(payments, admissionNumbers, from, to) {
   });
 
   let rowIndex = headerRowIndex + 1;
-  const totals = { Cash: 0, Chq: 0, CC: 0, DT: 0, 'MY FEES': 0 };
 
-  for (const payment of payments) {
+  for (const r of rows) {
     const row = sheet.getRow(rowIndex);
-    const column = columnForPaymentMode(payment.payment_mode);
-    const amount = Number(payment.amount) || 0;
 
-    row.getCell(1).value = payment.date || '';
-    row.getCell(2).value = payment.payment_number || payment.reference_number || '';
-    row.getCell(3).value = payment.created_by || '';
-    row.getCell(4).value = admissionNumbers[payment.customer_id] || '*';
-    row.getCell(5).value = payment.customer_name || '*';
-    row.getCell(6).value = payment.reference_number || '*';
-    row.getCell(7).value = payment.description || payment.notes || '*';
-    row.getCell(8).value = column === 'Cash' ? amount : '*';
-    row.getCell(9).value = column === 'Chq' ? amount : '*';
-    row.getCell(10).value = column === 'CC' ? amount : '*';
-    row.getCell(11).value = column === 'DT' ? amount : '*';
-    row.getCell(12).value = column === 'MY FEES' ? amount : '*';
-    row.getCell(13).value = bankLabelForAccount(payment.account_name);
-
-    if (column) totals[column] += amount;
+    row.getCell(1).value = r.date;
+    row.getCell(2).value = r.receiptNo;
+    row.getCell(3).value = r.cashier;
+    row.getCell(4).value = r.admissionNumber || '*';
+    row.getCell(5).value = r.studentName || '*';
+    row.getCell(6).value = r.remark || '*';
+    row.getCell(7).value = r.details || '*';
+    row.getCell(8).value = r.cash ?? '*';
+    row.getCell(9).value = r.chq ?? '*';
+    row.getCell(10).value = r.cc ?? '*';
+    row.getCell(11).value = r.dt ?? '*';
+    row.getCell(12).value = r.myFees ?? '*';
+    row.getCell(13).value = r.bank;
 
     for (let c = 1; c <= 13; c++) {
       row.getCell(c).border = {
