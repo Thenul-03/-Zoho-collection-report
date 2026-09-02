@@ -1,0 +1,9 @@
+{
+  "name": "zoho-daily-collection-report",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generates the Daily Cash Collection Excel report from Zoho Books customer payments.",
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  }
+}
