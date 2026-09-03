@@ -55,46 +55,39 @@ environment variable in Vercel, and redeploy.
 That's the only manual step. From here on, the deployed app runs
 independently — no one needs to touch localhost or a terminal again.
 
-## 5. Generate a report — the easy way (preview page)
+## 5. Use the web interface (button, dropdown, live preview)
 
-Just visit your site's homepage:
+Visit your site's homepage:
 
 ```
 https://your-project.vercel.app/
 ```
 
-Pick a From/To date and paste in your `REPORT_ACCESS_KEY` once (it's
-remembered in that browser after the first time). Click **Run Report** and
-the page pulls the payments straight from Zoho Books and shows them in a
-table right there — same live-connection pattern as the cheque-writer tool's
-"Recent Payments" list, with a green **Zoho Connected** / red **Zoho
-Disconnected** badge in the top right so you always know whether the
-connection to Zoho is working before you trust the numbers.
+You'll see:
 
-Once you're happy with the preview, click **Download Excel** to get the same
-`.xlsx` file the old button used to generate directly.
+- **A "Zoho Connected / Disconnected" badge** in the top right (like your
+  cheque-writer app) — it pings `/api/status` and confirms your refresh
+  token is still valid every time you load the page or change the access key.
+- **A Date Range dropdown** with the same presets as Zoho's own report filter
+  (Today, Yesterday, This Week, This Month, This Year, Custom Range).
+- **Preview Report** — loads the data into an on-page table (via
+  `/api/preview`, JSON only, no file) so you can sanity-check totals and
+  admission numbers before generating anything.
+- **Download Excel** — generates and downloads the actual `.xlsx` for
+  whatever range is currently selected, in your school's template layout.
 
-Under the hood this preview is powered by a new endpoint, `/api/data.js`,
-which shares all of its Zoho-fetching logic with `/api/report.js` via
-`lib/zoho.js` — so the numbers on screen and the numbers in the Excel file
-can never drift apart; add a payment mode or account mapping once and both
-update.
+The access key is remembered in that browser after the first entry (via
+`localStorage`) — "forget saved key" clears it.
 
-### Or generate a report directly by URL (no preview)
+### Or generate a report directly by URL (still works)
 
 ```
 https://your-project.vercel.app/api/report?key=YOUR_REPORT_ACCESS_KEY&from=2026-09-01&to=2026-09-01
 ```
 
-### Or fetch the raw JSON (e.g. to build another view)
-
-```
-https://your-project.vercel.app/api/data?key=YOUR_REPORT_ACCESS_KEY&from=2026-09-01&to=2026-09-01
-```
-
 ## 5b. If Admission Number comes back blank
 
-Visit the same URL with `&debug=1` added, e.g.:
+Visit the report URL with `&debug=1` added, e.g.:
 
 ```
 https://your-project.vercel.app/api/report?key=YOUR_REPORT_ACCESS_KEY&from=2026-09-01&to=2026-09-01&debug=1
@@ -105,13 +98,14 @@ its full Contact record exactly as Zoho returns it. Look inside
 `sample_contact.contact.custom_fields` (or `custom_field_hash`) for how your
 Admission Number field is actually labeled — Zoho's API sometimes uses a
 slightly different label than what's shown in the UI. If it doesn't match
-`admission number` (case/spacing-insensitive), open `api/report.js` and
-update the `ADMISSION_FIELD_LABEL` constant near `extractAdmissionNumber` to
-match exactly what you see.
+`admission number` (case/spacing-insensitive), open `api/_lib/zoho.js` and
+update the `ADMISSION_FIELD_LABEL` constant to match exactly what you see.
 
 ## 6. Adjust the mappings for your organization
 
-Open `lib/zoho.js` and edit the two maps near the top:
+Open `api/_lib/zoho.js` and edit the two maps near the top — this is now
+the single shared source used by the preview, download, and status
+endpoints, so you only need to edit it once:
 
 - `PAYMENT_MODE_TO_COLUMN` — maps Zoho's `payment_mode` values (e.g.
   `cash`, `creditcard`) to the Cash/Chq/CC/DT/MY FEES columns. Check your
@@ -133,3 +127,11 @@ Open `lib/zoho.js` and edit the two maps near the top:
 - Large date ranges fetch one extra API call per unique student (to look up
   Admission Number), so keep ranges reasonable (a day or a month) rather
   than pulling a full year in one request.
+- **This app still uses a manually-pasted `ZOHO_REFRESH_TOKEN` environment
+  variable**, unlike your cheque-writer app which likely has a "Connect to
+  Zoho" button that performs the OAuth handshake and stores the resulting
+  token automatically. Doing that here would require adding persistent
+  storage (e.g. Vercel KV / Upstash Redis) so a token obtained via a button
+  click can be saved without a redeploy — happy to add that if you want full
+  parity with the cheque app's UX, it's a bigger change than the dropdown/
+  preview additions above.

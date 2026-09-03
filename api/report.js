@@ -1,10 +1,5 @@
 import ExcelJS from 'exceljs';
-import {
-  getAccessToken,
-  fetchAllPayments,
-  fetchAdmissionNumbers,
-  buildReportRows,
-} from '../lib/zoho.js';
+import { getAccessToken, fetchAllPayments, buildReportRows } from './_lib/zoho.js';
 
 export default async function handler(req, res) {
   const { key, from, to, debug } = req.query;
@@ -19,32 +14,26 @@ export default async function handler(req, res) {
   }
 
   try {
-    const accessToken = await getAccessToken();
-    const payments = await fetchAllPayments(accessToken, from, to);
-
-    // Debug mode: add &debug=1 to the URL to see the RAW contact JSON for the
-    // first payment in the range, instead of downloading a file. Use this to
-    // find the exact custom field name/label Zoho is actually returning.
+    // Debug mode: add &debug=1 to see the RAW contact JSON for the first
+    // payment in range, to find the exact Admission Number field name/label.
     if (debug === '1') {
-      const apiDomain = process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com';
-      const orgId = process.env.ZOHO_ORGANIZATION_ID;
+      const accessToken = await getAccessToken();
+      const payments = await fetchAllPayments(accessToken, from, to);
       const firstPayment = payments[0];
       if (!firstPayment) {
         res.status(200).json({ message: 'No payments found in this date range.' });
         return;
       }
+      const apiDomain = process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com';
+      const orgId = process.env.ZOHO_ORGANIZATION_ID;
       const url = `${apiDomain}/books/v3/contacts/${firstPayment.customer_id}?organization_id=${orgId}`;
       const resp = await fetch(url, { headers: { Authorization: `Zoho-oauthtoken ${accessToken}` } });
       const contactData = await resp.json();
-      res.status(200).json({
-        sample_payment: firstPayment,
-        sample_contact: contactData,
-      });
+      res.status(200).json({ sample_payment: firstPayment, sample_contact: contactData });
       return;
     }
 
-    const admissionNumbers = await fetchAdmissionNumbers(accessToken, payments);
-    const { rows, totals } = buildReportRows(payments, admissionNumbers);
+    const { rows, totals } = await buildReportRows(from, to);
     const buffer = await buildWorkbook(rows, totals, from, to);
 
     res.setHeader(
@@ -62,29 +51,15 @@ export default async function handler(req, res) {
   }
 }
 
-// --- Build the workbook ------------------------------------------------------
-
 async function buildWorkbook(rows, totals, from, to) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Daily Collection');
 
   const columns = [
-    'Date & Time',
-    'Receipt No',
-    'Cashier',
-    'Admission Number',
-    'Student Name',
-    'Remark',
-    'Details',
-    'Cash',
-    'Chq',
-    'CC',
-    'DT',
-    'MY FEES',
-    'Bank',
+    'Date & Time', 'Receipt No', 'Cashier', 'Admission Number', 'Student Name',
+    'Remark', 'Details', 'Cash', 'Chq', 'CC', 'DT', 'MY FEES', 'Bank',
   ];
 
-  // Letterhead
   sheet.mergeCells('A1:M1');
   sheet.getCell('A1').value = 'WYCHERLEY INTERNATIONAL SCHOOL (PVT) LTD';
   sheet.getCell('A1').font = { bold: true, size: 14 };
@@ -102,11 +77,7 @@ async function buildWorkbook(rows, totals, from, to) {
     const cell = headerRow.getCell(i + 1);
     cell.value = title;
     cell.font = { bold: true };
-    cell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFD9CBA0' },
-    };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9CBA0' } };
     cell.border = {
       top: { style: 'thin' }, left: { style: 'thin' },
       bottom: { style: 'thin' }, right: { style: 'thin' },
@@ -114,16 +85,14 @@ async function buildWorkbook(rows, totals, from, to) {
   });
 
   let rowIndex = headerRowIndex + 1;
-
   for (const r of rows) {
     const row = sheet.getRow(rowIndex);
-
     row.getCell(1).value = r.date;
     row.getCell(2).value = r.receiptNo;
-    row.getCell(3).value = r.cashier;
+    row.getCell(3).value = '';
     row.getCell(4).value = r.admissionNumber || '*';
     row.getCell(5).value = r.studentName || '*';
-    row.getCell(6).value = r.remark || '*';
+    row.getCell(6).value = r.reference || '*';
     row.getCell(7).value = r.details || '*';
     row.getCell(8).value = r.cash ?? '*';
     row.getCell(9).value = r.chq ?? '*';
@@ -138,11 +107,9 @@ async function buildWorkbook(rows, totals, from, to) {
         bottom: { style: 'thin' }, right: { style: 'thin' },
       };
     }
-
     rowIndex++;
   }
 
-  // Totals row
   const totalRow = sheet.getRow(rowIndex);
   totalRow.getCell(7).value = 'TOTAL';
   totalRow.getCell(7).font = { bold: true };
@@ -151,11 +118,8 @@ async function buildWorkbook(rows, totals, from, to) {
   totalRow.getCell(10).value = totals.CC || '*****';
   totalRow.getCell(11).value = totals.DT || '*****';
   totalRow.getCell(12).value = totals['MY FEES'] || '*****';
-  for (let c = 7; c <= 12; c++) {
-    totalRow.getCell(c).font = { bold: true };
-  }
+  for (let c = 7; c <= 12; c++) totalRow.getCell(c).font = { bold: true };
 
-  // Reasonable column widths
   sheet.columns = [
     { width: 18 }, { width: 12 }, { width: 10 }, { width: 16 }, { width: 22 },
     { width: 14 }, { width: 30 }, { width: 12 }, { width: 12 }, { width: 12 },
