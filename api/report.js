@@ -1,5 +1,4 @@
 import ExcelJS from 'exceljs';
-import PDFDocument from 'pdfkit';
 import { getAccessToken, fetchAllPayments, buildReportRows } from './_lib/zoho.js';
 
 export default async function handler(req, res) {
@@ -187,6 +186,7 @@ function addSummaryAndSignatures(sheet, startRow, rows) {
 }
 
 async function buildPdf(rows, totals, from, to) {
+  const { default: PDFDocument } = await import('pdfkit');
   const document = new PDFDocument({ layout: 'landscape', size: 'A4', margin: 24 });
   const chunks = [];
   document.on('data', (chunk) => chunks.push(chunk));

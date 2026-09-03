@@ -39,6 +39,7 @@
   }
   .row { display: flex; gap: 14px; flex-wrap: wrap; }
   .row > div { flex: 1; min-width: 160px; }
+  .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
   button {
     padding: 10px 18px; font-size: 14px; font-weight: 600; border: none;
@@ -62,6 +63,14 @@
   .scroll-wrap { max-height: 420px; overflow: auto; border-radius: 8px; }
 
   .forget { font-size: 12px; color: #888; cursor: pointer; text-decoration: underline; }
+  @media (max-width: 600px) {
+    body { margin: 20px auto; padding: 0 12px; }
+    .topbar { display: block; }
+    .topbar .badge { display: inline-block; margin-top: 10px; }
+    .panel { padding: 14px; }
+    .actions { align-items: stretch; }
+    .actions button, .actions select { margin-top: 10px; }
+  }
 </style>
 </head>
 <body>
@@ -101,13 +110,15 @@
       </div>
     </div>
 
-    <button class="primary" id="previewBtn">Preview Report</button>
-    <select id="downloadFormat" aria-label="Download format" style="width:auto; display:inline-block; margin-top:16px;">
-      <option value="excel">Excel</option>
-      <option value="pdf">PDF</option>
-    </select>
-    <button class="secondary" id="downloadBtn">Download</button>
-    <span class="forget" id="forgetKey">forget saved key</span>
+    <div class="actions">
+      <button class="primary" id="previewBtn">Preview Report</button>
+      <select id="downloadFormat" aria-label="Download format" style="width:auto; display:inline-block; margin-top:16px;">
+        <option value="excel">Excel</option>
+        <option value="pdf">PDF</option>
+      </select>
+      <button class="secondary" id="downloadBtn">Download</button>
+      <span class="forget" id="forgetKey">forget saved key</span>
+    </div>
     <div id="status"></div>
   </div>
 
