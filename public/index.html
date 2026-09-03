@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <title>Daily Collection Report</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <style>
   :root { color-scheme: dark; }
   body {
@@ -353,7 +354,7 @@
 
         srResultsPanel.style.display = 'block';
 
-        statusEl.textContent = `Loaded ${data.count} payment(s) and ${data.salesReceiptCount || 0} sales receipt(s).${data.salesReceiptError ? ` ${data.salesReceiptError}` : ''}`;
+        statusEl.innerHTML = `Loaded ${data.count} payment(s) and ${data.salesReceiptCount || 0} sales receipt(s).${data.salesReceiptError ? ` ${data.salesReceiptError} <a href="/api/authorize" target="_blank" rel="noopener">Authorize Sales Receipts</a>` : ''}`;
         if (data.salesReceiptError) statusEl.className = 'error';
       } catch (e) {
         statusEl.textContent = e.message;
