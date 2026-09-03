@@ -172,9 +172,15 @@ export async function fetchAdmissionNumbers(accessToken, records) {
 // both, but you asked for them kept apart rather than merged into one list.
 export async function buildReportRows(from, to) {
   const accessToken = await getAccessToken();
+  let salesReceiptError = '';
   const [payments, salesReceipts] = await Promise.all([
     fetchAllPayments(accessToken, from, to),
-    fetchAllSalesReceipts(accessToken, from, to),
+    fetchAllSalesReceipts(accessToken, from, to).catch((err) => {
+      if (!err.message.includes('"code":57')) throw err;
+      salesReceiptError = 'Sales receipts unavailable: Zoho permission is missing (code 57).';
+      console.warn(salesReceiptError);
+      return [];
+    }),
   ]);
 
   // Look up Admission Number once per customer across BOTH tables combined,
@@ -232,5 +238,6 @@ export async function buildReportRows(from, to) {
     salesReceiptRows,
     salesReceiptTotal,
     salesReceiptCount: salesReceipts.length,
+    salesReceiptError,
   };
 }

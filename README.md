@@ -45,7 +45,7 @@ Build this URL with your real Client ID and visit it in your browser
 (swap `accounts.zoho.com` for `.in` if needed):
 
 ```
-https://accounts.zoho.com/oauth/v2/auth?scope=ZohoBooks.customerpayments.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ&client_id=YOUR_CLIENT_ID&response_type=code&access_type=offline&redirect_uri=https://your-project.vercel.app/api/callback&prompt=consent
+https://accounts.zoho.com/oauth/v2/auth?scope=ZohoBooks.customerpayments.READ,ZohoBooks.salesreceipts.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ&client_id=YOUR_CLIENT_ID&response_type=code&access_type=offline&redirect_uri=https://your-project.vercel.app/api/callback&prompt=consent
 ```
 
 Log in, click Accept. You'll land on `/api/callback`, which shows your

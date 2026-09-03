@@ -352,7 +352,8 @@
 
         srResultsPanel.style.display = 'block';
 
-        statusEl.textContent = `Loaded ${data.count} payment(s) and ${data.salesReceiptCount || 0} sales receipt(s).`;
+        statusEl.textContent = `Loaded ${data.count} payment(s) and ${data.salesReceiptCount || 0} sales receipt(s).${data.salesReceiptError ? ` ${data.salesReceiptError}` : ''}`;
+        if (data.salesReceiptError) statusEl.className = 'error';
       } catch (e) {
         statusEl.textContent = e.message;
         statusEl.className = 'error';

@@ -1,5 +1,4 @@
 import ExcelJS from 'exceljs';
-import PDFDocument from 'pdfkit';
 import { getAccessToken, fetchAllPayments, buildReportRows } from './_lib/zoho.js';
 
 export default async function handler(req, res) {
@@ -61,7 +60,8 @@ export default async function handler(req, res) {
   }
 }
 
-function buildPdf(rows, totals, salesReceiptRows, salesReceiptTotal, from, to) {
+async function buildPdf(rows, totals, salesReceiptRows, salesReceiptTotal, from, to) {
+  const { default: PDFDocument } = await import('pdfkit');
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ layout: 'landscape', size: 'A4', margin: 28 });
     const chunks = [];
