@@ -73,8 +73,10 @@ You'll see:
 - **Preview Report** — loads the data into an on-page table (via
   `/api/preview`, JSON only, no file) so you can sanity-check totals and
   admission numbers before generating anything.
-- **Download Excel** — generates and downloads the actual `.xlsx` for
-  whatever range is currently selected, in your school's template layout.
+- **Download** — choose Excel or PDF for the selected range. Both formats
+  show zeroes instead of asterisks for empty payment columns, include a
+  bank-wise summary, and leave space for the generated, checked, and
+  authorized signatures.
 
 The access key is remembered in that browser after the first entry (via
 `localStorage`) — "forget saved key" clears it.

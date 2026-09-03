@@ -102,7 +102,11 @@
     </div>
 
     <button class="primary" id="previewBtn">Preview Report</button>
-    <button class="secondary" id="downloadBtn">Download Excel</button>
+    <select id="downloadFormat" aria-label="Download format" style="width:auto; display:inline-block; margin-top:16px;">
+      <option value="excel">Excel</option>
+      <option value="pdf">PDF</option>
+    </select>
+    <button class="secondary" id="downloadBtn">Download</button>
     <span class="forget" id="forgetKey">forget saved key</span>
     <div id="status"></div>
   </div>
@@ -135,6 +139,7 @@
     const resultsPanel = document.getElementById('resultsPanel');
     const resultsBody = document.getElementById('resultsBody');
     const resultsFoot = document.getElementById('resultsFoot');
+    const downloadFormatEl = document.getElementById('downloadFormat');
 
     const savedKey = localStorage.getItem('reportAccessKey');
     if (savedKey) keyEl.value = savedKey;
@@ -225,7 +230,7 @@
     if (savedKey) checkConnection();
 
     function fmt(n) {
-      return n === null || n === undefined ? '*' : Number(n).toLocaleString();
+      return n === null || n === undefined ? '0' : Number(n).toLocaleString();
     }
 
     document.getElementById('previewBtn').addEventListener('click', async () => {
@@ -247,8 +252,8 @@
 
         resultsBody.innerHTML = data.rows.map((r) => `
           <tr>
-            <td>${r.date}</td><td>${r.receiptNo}</td><td>${r.admissionNumber || '*'}</td>
-            <td>${r.studentName || '*'}</td><td>${r.details || '*'}</td>
+            <td>${r.date}</td><td>${r.receiptNo}</td><td>${r.admissionNumber || ''}</td>
+            <td>${r.studentName || ''}</td><td>${r.details || ''}</td>
             <td class="num">${fmt(r.cash)}</td><td class="num">${fmt(r.chq)}</td>
             <td class="num">${fmt(r.cc)}</td><td class="num">${fmt(r.dt)}</td>
             <td class="num">${fmt(r.myFees)}</td><td>${r.bank}</td>
@@ -259,11 +264,11 @@
         resultsFoot.innerHTML = `
           <tr class="tfoot">
             <td colspan="5">TOTAL (${data.count} receipts)</td>
-            <td class="num">${t.Cash ? t.Cash.toLocaleString() : '-'}</td>
-            <td class="num">${t.Chq ? t.Chq.toLocaleString() : '-'}</td>
-            <td class="num">${t.CC ? t.CC.toLocaleString() : '-'}</td>
-            <td class="num">${t.DT ? t.DT.toLocaleString() : '-'}</td>
-            <td class="num">${t['MY FEES'] ? t['MY FEES'].toLocaleString() : '-'}</td>
+            <td class="num">${t.Cash.toLocaleString()}</td>
+            <td class="num">${t.Chq.toLocaleString()}</td>
+            <td class="num">${t.CC.toLocaleString()}</td>
+            <td class="num">${t.DT.toLocaleString()}</td>
+            <td class="num">${t['MY FEES'].toLocaleString()}</td>
             <td></td>
           </tr>
         `;
@@ -284,7 +289,8 @@
         statusEl.className = 'error';
         return;
       }
-      window.location.href = `/api/report?key=${encodeURIComponent(key)}&from=${from}&to=${to}`;
+      const format = downloadFormatEl.value;
+      window.location.href = `/api/report?key=${encodeURIComponent(key)}&from=${from}&to=${to}&format=${format}`;
     });
   </script>
 </body>

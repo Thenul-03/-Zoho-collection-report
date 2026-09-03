@@ -4,6 +4,7 @@
   "private": true,
   "description": "Generates the Daily Cash Collection Excel report from Zoho Books customer payments.",
   "dependencies": {
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "pdfkit": "^0.20.2"
   }
 }
