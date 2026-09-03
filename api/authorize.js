@@ -10,7 +10,7 @@ export default function handler(req, res) {
   const redirectUri = `https://${req.headers.host}/api/callback`;
   const domain = process.env.ZOHO_ACCOUNTS_DOMAIN;
   const params = new URLSearchParams({
-    scope: 'ZohoBooks.customerpayments.READ,ZohoBooks.salesreceipts.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ',
+    scope: 'ZohoBooks.customerpayments.READ,ZohoBooks.invoices.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ',
     client_id: process.env.ZOHO_CLIENT_ID,
     response_type: 'code',
     access_type: 'offline',
