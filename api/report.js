@@ -1,6 +1,40 @@
 import ExcelJS from 'exceljs';
 import { getAccessToken, fetchAllPayments, buildReportRows } from './_lib/zoho.js';
 
+const PAYMENT_COLUMNS = ['Cash', 'Chq', 'CC', 'DT', 'MY FEES'];
+const createSummaryTotals = () => ({ Cash: 0, Chq: 0, CC: 0, DT: 0, 'MY FEES': 0, 'Sales Receipts': 0 });
+
+function paymentColumnForRow(row) {
+  if (row.column) return row.column;
+  if (row.cash !== null) return 'Cash';
+  if (row.chq !== null) return 'Chq';
+  if (row.cc !== null) return 'CC';
+  if (row.dt !== null) return 'DT';
+  if (row.myFees !== null) return 'MY FEES';
+  return null;
+}
+
+function buildBankSummaries(rows, salesReceiptRows) {
+  const createSummary = createSummaryTotals;
+  const paymentSummary = new Map();
+  const combinedSummary = new Map();
+  const add = (map, bank, column, amount) => {
+    const summary = map.get(bank) || createSummary();
+    summary[column] += Number(amount) || 0;
+    map.set(bank, summary);
+  };
+
+  rows.forEach((row) => {
+    const column = paymentColumnForRow(row);
+    if (column) {
+      add(paymentSummary, row.bank || '-', column, row[column === 'Cash' ? 'cash' : column === 'Chq' ? 'chq' : column === 'CC' ? 'cc' : column === 'DT' ? 'dt' : 'myFees']);
+      add(combinedSummary, row.bank || '-', column, row[column === 'Cash' ? 'cash' : column === 'Chq' ? 'chq' : column === 'CC' ? 'cc' : column === 'DT' ? 'dt' : 'myFees']);
+    }
+  });
+  salesReceiptRows.forEach((row) => add(combinedSummary, row.depositTo || '-', 'Sales Receipts', row.total));
+  return { paymentSummary, combinedSummary };
+}
+
 export default async function handler(req, res) {
   const { key, from, to, debug, format = 'xlsx' } = req.query;
 
@@ -96,42 +130,127 @@ async function buildPdf(rows, totals, salesReceiptRows, salesReceiptTotal, from,
       data.forEach((row) => drawRow(row));
     };
 
-    drawHeader('DAILY CASH COLLECTION REPORT');
-    doc.fontSize(11).font('Helvetica-Bold').text('PAYMENT SUMMARY');
-    const modes = ['Cash', 'Chq', 'CC', 'DT', 'MY FEES'];
-    const paymentCounts = Object.fromEntries(modes.map((mode) => [mode, 0]));
-    rows.forEach((row) => {
-      const mode = row.cash !== null ? 'Cash' : row.chq !== null ? 'Chq' : row.cc !== null ? 'CC' : row.dt !== null ? 'DT' : row.myFees !== null ? 'MY FEES' : null;
-      if (mode) paymentCounts[mode]++;
+    const { paymentSummary, combinedSummary } = buildBankSummaries(rows, salesReceiptRows);
+    const summaryRows = (summaryMap, includeSales) => [...summaryMap.entries()].map(([bank, values]) => {
+      const total = PAYMENT_COLUMNS.reduce((sum, column) => sum + values[column], 0) + (includeSales ? values['Sales Receipts'] : 0);
+      return [bank, ...PAYMENT_COLUMNS.map((column) => formatAmount(values[column])), ...(includeSales ? [formatAmount(values['Sales Receipts'])] : []), formatAmount(total)];
     });
-    drawTable(
-      ['Payment Mode', 'Receipts', 'Amount'],
-      modes.map((mode) => [mode, paymentCounts[mode], formatAmount(totals[mode])])
-        .concat([['TOTAL', rows.length, formatAmount(Object.values(totals).reduce((sum, amount) => sum + Number(amount || 0), 0))]]),
-      [pageWidth * 0.35, pageWidth * 0.2, pageWidth * 0.25]
-    );
-    doc.moveDown(1);
+    const summaryHeaders = (includeSales) => ['Bank', ...PAYMENT_COLUMNS, ...(includeSales ? ['Sales Receipts'] : []), 'Total'];
+    const summaryWidths = (includeSales) => includeSales ? [100, 60, 60, 60, 60, 70, 90, 70] : [120, 75, 75, 75, 75, 90, 85];
+    const summaryTotal = (summaryMap, includeSales) => {
+      const values = [...summaryMap.values()].reduce((result, value) => {
+        [...PAYMENT_COLUMNS, ...(includeSales ? ['Sales Receipts'] : [])].forEach((column) => { result[column] += value[column]; });
+        return result;
+      }, createSummaryTotals(includeSales));
+      const total = [...PAYMENT_COLUMNS, ...(includeSales ? ['Sales Receipts'] : [])].reduce((sum, column) => sum + values[column], 0);
+      return [['TOTAL', ...PAYMENT_COLUMNS.map((column) => formatAmount(values[column])), ...(includeSales ? [formatAmount(values['Sales Receipts'])] : []), formatAmount(total)]];
+    };
 
-    doc.fontSize(11).font('Helvetica-Bold').text('PAYMENTS RECEIVED');
+    drawHeader('DAILY CASH COLLECTION REPORT');
+    doc.fontSize(11).font('Helvetica-Bold').text('1. PAYMENT RECEIPTS');
     drawTable(
       ['Date', 'Receipt No', 'Admission No.', 'Student Name', 'Details', 'Cash', 'Chq', 'CC', 'DT', 'MY FEES', 'Bank'],
       rows.map((row) => [row.date, row.receiptNo, row.admissionNumber || '*', row.studentName || '*', row.details || '*', formatAmount(row.cash), formatAmount(row.chq), formatAmount(row.cc), formatAmount(row.dt), formatAmount(row.myFees), row.bank]),
       [55, 65, 62, 95, 120, 48, 48, 48, 48, 55, 58]
     );
+    doc.moveDown(1);
+    doc.fontSize(11).font('Helvetica-Bold').text('2. PAYMENT RECEIPTS BANK-WISE SUMMARY');
+    drawTable(
+      summaryHeaders(false), summaryRows(paymentSummary, false).concat(summaryTotal(paymentSummary, false)), summaryWidths(false)
+    );
 
     doc.addPage();
-    drawHeader('SALES RECEIPTS');
+    drawHeader('3. SALES RECEIPTS');
     drawTable(
       ['Receipt Number', 'Receipt Date', 'Payment Mode', 'Customer Name', 'Admission No.', 'Deposit To', 'SubTotal', 'Total', 'Notes'],
       salesReceiptRows.map((row) => [row.receiptNumber, row.date, row.paymentMode, row.customerName, row.admissionNumber || '*', row.depositTo, formatAmount(row.subTotal), formatAmount(row.total), row.notes]),
       [75, 62, 70, 105, 65, 75, 60, 60, 160]
     );
     doc.font('Helvetica-Bold').fontSize(8).text(`TOTAL SALES RECEIPTS: ${salesReceiptRows.length}    ${formatAmount(salesReceiptTotal)}`);
+    doc.moveDown(1);
+    doc.fontSize(11).font('Helvetica-Bold').text('4. COMBINED PAYMENT AND SALES RECEIPTS SUMMARY');
+    drawTable(summaryHeaders(true), summaryRows(combinedSummary, true).concat(summaryTotal(combinedSummary, true)), summaryWidths(true));
+    doc.moveDown(1.5);
+    doc.fontSize(11).font('Helvetica-Bold').text('5. APPROVAL');
+    doc.moveDown(1.5);
+    doc.fontSize(9).font('Helvetica').text('REPORT GENERATED BY: ____________________        REPORT CHECKED BY: ____________________        AUTHORIZED BY: ____________________');
     doc.end();
   });
 }
 
 async function buildWorkbook(rows, totals, salesReceiptRows, salesReceiptTotal, from, to) {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet('Daily Collection');
+  const { paymentSummary, combinedSummary } = buildBankSummaries(rows, salesReceiptRows);
+  const beige = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9CBA0' } };
+  const border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  const money = (value) => Number(value || 0);
+  const styleTitle = (row, title, width) => {
+    sheet.mergeCells(row, 1, row, width);
+    const cell = sheet.getCell(row, 1);
+    cell.value = title;
+    cell.font = { bold: true, size: 12 };
+  };
+  const addTable = (startRow, headers, data, widths) => {
+    const header = sheet.getRow(startRow);
+    headers.forEach((title, index) => {
+      const cell = header.getCell(index + 1);
+      cell.value = title;
+      cell.font = { bold: true };
+      cell.fill = beige;
+      cell.border = border;
+    });
+    data.forEach((values, rowOffset) => {
+      const row = sheet.getRow(startRow + rowOffset + 1);
+      values.forEach((value, index) => {
+        const cell = row.getCell(index + 1);
+        cell.value = value;
+        cell.border = border;
+        if (index > 0 && typeof value === 'number') cell.numFmt = '#,##0';
+      });
+    });
+    widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+    return startRow + data.length + 1;
+  };
+  const summaryData = (summaryMap, includeSales) => [...summaryMap.entries()].map(([bank, values]) => {
+    const total = PAYMENT_COLUMNS.reduce((sum, column) => sum + values[column], 0) + (includeSales ? values['Sales Receipts'] : 0);
+    return [bank, ...PAYMENT_COLUMNS.map((column) => money(values[column])), ...(includeSales ? [money(values['Sales Receipts'])] : []), money(total)];
+  });
+  const summaryTotal = (summaryMap, includeSales) => {
+    const values = [...summaryMap.values()].reduce((result, value) => {
+      [...PAYMENT_COLUMNS, ...(includeSales ? ['Sales Receipts'] : [])].forEach((column) => { result[column] += value[column]; });
+      return result;
+    }, createSummaryTotals());
+    return [['TOTAL', ...PAYMENT_COLUMNS.map((column) => money(values[column])), ...(includeSales ? [money(values['Sales Receipts'])] : []), [...PAYMENT_COLUMNS, ...(includeSales ? ['Sales Receipts'] : [])].reduce((sum, column) => sum + values[column], 0)]];
+  };
+
+  styleTitle(1, 'WYCHERLEY INTERNATIONAL SCHOOL (PVT) LTD', 13);
+  sheet.getCell('A2').value = 'NO. 232, BAUDDHALOKA MAWATHA, COLOMBO 07';
+  styleTitle(3, `DAILY CASH COLLECTION REPORT - ${from} to ${to}`, 13);
+  let rowIndex = 5;
+  styleTitle(rowIndex++, '1. PAYMENT RECEIPTS', 13);
+  rowIndex = addTable(rowIndex, ['Date & Time', 'Receipt No', 'Cashier', 'Admission Number', 'Student Name', 'Remark', 'Details', 'Cash', 'Chq', 'CC', 'DT', 'MY FEES', 'Bank'], rows.map((r) => [r.date, r.receiptNo, '', r.admissionNumber || '*', r.studentName || '*', r.reference || '*', r.details || '*', r.cash ?? '*', r.chq ?? '*', r.cc ?? '*', r.dt ?? '*', r.myFees ?? '*', r.bank]), [18, 14, 10, 16, 22, 14, 30, 12, 12, 12, 12, 12, 18]);
+  styleTitle(rowIndex + 1, '2. PAYMENT RECEIPTS BANK-WISE SUMMARY', 7);
+  rowIndex += 2;
+  rowIndex = addTable(rowIndex, ['Bank', ...PAYMENT_COLUMNS, 'Total'], summaryData(paymentSummary, false).concat(summaryTotal(paymentSummary, false)), [28, 14, 14, 14, 14, 16, 16]);
+  styleTitle(rowIndex + 2, '3. SALES RECEIPTS', 9);
+  rowIndex += 3;
+  rowIndex = addTable(rowIndex, ['Receipt Number', 'Receipt Date', 'Payment Mode', 'Customer Name', 'Admission Number', 'Deposit To', 'SubTotal', 'Total', 'Notes'], salesReceiptRows.map((sr) => [sr.receiptNumber, sr.date, sr.paymentMode, sr.customerName, sr.admissionNumber || '*', sr.depositTo, money(sr.subTotal), money(sr.total), sr.notes]), [20, 16, 16, 24, 18, 22, 14, 14, 30]);
+  rowIndex = addTable(rowIndex + 1, ['Bank', ...PAYMENT_COLUMNS, 'Sales Receipts', 'Total'], summaryData(combinedSummary, true).concat(summaryTotal(combinedSummary, true)), [28, 14, 14, 14, 14, 16, 20, 16]);
+  styleTitle(rowIndex + 1, '4. COMBINED PAYMENT AND SALES RECEIPTS SUMMARY', 8);
+  rowIndex += 2;
+  rowIndex = addTable(rowIndex, ['Bank', ...PAYMENT_COLUMNS, 'Sales Receipts', 'Total'], summaryData(combinedSummary, true).concat(summaryTotal(combinedSummary, true)), [28, 14, 14, 14, 14, 16, 20, 16]);
+  styleTitle(rowIndex + 2, '5. APPROVAL', 13);
+  rowIndex += 3;
+  sheet.mergeCells(rowIndex, 1, rowIndex, 4); sheet.getCell(rowIndex, 1).value = 'REPORT GENERATED BY';
+  sheet.mergeCells(rowIndex, 6, rowIndex, 9); sheet.getCell(rowIndex, 6).value = 'REPORT CHECKED BY';
+  sheet.mergeCells(rowIndex, 11, rowIndex, 13); sheet.getCell(rowIndex, 11).value = 'AUTHORIZED BY';
+  [1, 6, 11].forEach((column) => { sheet.getCell(rowIndex, column).font = { bold: true }; sheet.getCell(rowIndex, column).alignment = { horizontal: 'center' }; });
+  sheet.getRow(rowIndex + 2).height = 28;
+  return workbook.xlsx.writeBuffer();
+}
+
+async function buildWorkbookLegacy(rows, totals, salesReceiptRows, salesReceiptTotal, from, to) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Daily Collection');
 

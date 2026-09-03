@@ -48,6 +48,17 @@ Build this URL with your real Client ID and visit it in your browser
 https://accounts.zoho.com/oauth/v2/auth?scope=ZohoBooks.customerpayments.READ,ZohoBooks.salesreceipts.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ&client_id=YOUR_CLIENT_ID&response_type=code&access_type=offline&redirect_uri=https://your-project.vercel.app/api/callback&prompt=consent
 ```
 
+For the deployed site, you can instead open `/api/authorize`, for example:
+
+```
+https://zoho-collection-report.vercel.app/api/authorize
+```
+
+This starts the same consent flow with Sales Receipts access included. After
+accepting, copy the new refresh token from `/api/callback` into Vercel as
+`ZOHO_REFRESH_TOKEN`, then redeploy. Confirm `ZOHO_ORGANIZATION_ID` is
+`933829154` for the Zoho Books organization in the supplied link.
+
 Log in, click Accept. You'll land on `/api/callback`, which shows your
 `refresh_token` directly in the page — copy it into the `ZOHO_REFRESH_TOKEN`
 environment variable in Vercel, and redeploy.
