@@ -61,6 +61,7 @@
   .num { text-align: right; }
   .tfoot td { font-weight: 700; background: #1c212b; }
   .scroll-wrap { max-height: 420px; overflow: auto; border-radius: 8px; }
+  .section-title { margin: 0 0 10px; font-size: 14px; }
 
   .forget { font-size: 12px; color: #888; cursor: pointer; text-decoration: underline; }
   @media (max-width: 600px) {
@@ -123,6 +124,7 @@
   </div>
 
   <div class="panel" id="resultsPanel" style="display:none;">
+    <h2 class="section-title">Payments</h2>
     <div class="scroll-wrap">
       <table id="resultsTable">
         <thead>
@@ -134,6 +136,20 @@
         </thead>
         <tbody id="resultsBody"></tbody>
         <tfoot id="resultsFoot"></tfoot>
+      </table>
+    </div>
+    <h2 class="section-title" style="margin-top:24px;">Sales Receipts</h2>
+    <div class="scroll-wrap">
+      <table id="salesReceiptsTable">
+        <thead>
+          <tr>
+            <th>Receipt Number</th><th>Receipt Date</th><th>Payment Mode</th>
+            <th>Customer Name</th><th>Admission Number</th><th>Deposit To</th>
+            <th class="num">SubTotal</th><th class="num">Total</th><th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="salesReceiptsBody"></tbody>
+        <tfoot id="salesReceiptsFoot"></tfoot>
       </table>
     </div>
   </div>
@@ -150,6 +166,8 @@
     const resultsPanel = document.getElementById('resultsPanel');
     const resultsBody = document.getElementById('resultsBody');
     const resultsFoot = document.getElementById('resultsFoot');
+    const salesReceiptsBody = document.getElementById('salesReceiptsBody');
+    const salesReceiptsFoot = document.getElementById('salesReceiptsFoot');
     const downloadFormatEl = document.getElementById('downloadFormat');
 
     const savedKey = localStorage.getItem('reportAccessKey');
@@ -280,6 +298,25 @@
             <td class="num">${t.CC.toLocaleString()}</td>
             <td class="num">${t.DT.toLocaleString()}</td>
             <td class="num">${t['MY FEES'].toLocaleString()}</td>
+            <td></td>
+          </tr>
+        `;
+
+        salesReceiptsBody.innerHTML = data.salesReceiptRows.map((receipt) => `
+          <tr>
+            <td>${receipt.receiptNumber}</td><td>${receipt.receiptDate}</td>
+            <td>${receipt.paymentMode}</td><td>${receipt.customerName}</td>
+            <td>${receipt.admissionNumber || ''}</td><td>${receipt.depositTo}</td>
+            <td class="num">${fmt(receipt.subTotal)}</td><td class="num">${fmt(receipt.total)}</td>
+            <td>${receipt.notes || ''}</td>
+          </tr>
+        `).join('');
+
+        salesReceiptsFoot.innerHTML = `
+          <tr class="tfoot">
+            <td colspan="6">TOTAL (${data.salesReceiptRows.length} receipts)</td>
+            <td class="num">${fmt(data.salesReceiptTotals.SubTotal)}</td>
+            <td class="num">${fmt(data.salesReceiptTotals.Total)}</td>
             <td></td>
           </tr>
         `;

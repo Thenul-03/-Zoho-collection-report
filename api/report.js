@@ -33,16 +33,16 @@ export default async function handler(req, res) {
       return;
     }
 
-    const { rows, totals } = await buildReportRows(from, to);
+    const { rows, totals, salesReceiptRows, salesReceiptTotals } = await buildReportRows(from, to);
     if (format === 'pdf') {
-      const buffer = await buildPdf(rows, totals, from, to);
+      const buffer = await buildPdf(rows, totals, salesReceiptRows, salesReceiptTotals, from, to);
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="Daily_Collection_${from}_to_${to}.pdf"`);
       res.status(200).send(buffer);
       return;
     }
 
-    const buffer = await buildWorkbook(rows, totals, from, to);
+    const buffer = await buildWorkbook(rows, totals, salesReceiptRows, salesReceiptTotals, from, to);
 
     res.setHeader(
       'Content-Type',
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
   }
 }
 
-async function buildWorkbook(rows, totals, from, to) {
+async function buildWorkbook(rows, totals, salesReceiptRows, salesReceiptTotals, from, to) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Daily Collection');
 
@@ -128,11 +128,41 @@ async function buildWorkbook(rows, totals, from, to) {
   totalRow.getCell(12).value = totals['MY FEES'];
   for (let c = 7; c <= 12; c++) totalRow.getCell(c).font = { bold: true };
 
-  addSummaryAndSignatures(sheet, rowIndex + 3, rows);
+  rowIndex += 3;
+  sheet.getCell(`A${rowIndex}`).value = 'SALES RECEIPTS';
+  sheet.getCell(`A${rowIndex}`).font = { bold: true, size: 12 };
+  const salesColumns = [
+    'Receipt Number', 'Receipt Date', 'Payment Mode', 'Customer Name',
+    'Admission Number', 'Deposit To', 'SubTotal', 'Total', 'Notes',
+  ];
+  salesColumns.forEach((title, index) => {
+    const cell = sheet.getCell(rowIndex + 1, index + 1);
+    cell.value = title;
+    cell.font = { bold: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9CBA0' } };
+    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  });
+  salesReceiptRows.forEach((receipt, offset) => {
+    const row = sheet.getRow(rowIndex + 2 + offset);
+    const values = [receipt.receiptNumber, receipt.receiptDate, receipt.paymentMode, receipt.customerName,
+      receipt.admissionNumber, receipt.depositTo, receipt.subTotal, receipt.total, receipt.notes];
+    values.forEach((value, index) => {
+      row.getCell(index + 1).value = value || (index >= 6 ? 0 : '');
+      row.getCell(index + 1).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    });
+  });
+  const salesTotalRow = sheet.getRow(rowIndex + 2 + salesReceiptRows.length);
+  salesTotalRow.getCell(6).value = 'TOTAL';
+  salesTotalRow.getCell(6).font = { bold: true };
+  salesTotalRow.getCell(7).value = salesReceiptTotals.SubTotal;
+  salesTotalRow.getCell(8).value = salesReceiptTotals.Total;
+  for (let c = 6; c <= 8; c++) salesTotalRow.getCell(c).font = { bold: true };
+
+  addSummaryAndSignatures(sheet, rowIndex + 5 + salesReceiptRows.length, rows);
 
   sheet.columns = [
-    { width: 18 }, { width: 12 }, { width: 10 }, { width: 16 }, { width: 22 },
-    { width: 14 }, { width: 30 }, { width: 12 }, { width: 12 }, { width: 12 },
+    { width: 18 }, { width: 16 }, { width: 14 }, { width: 24 }, { width: 18 },
+    { width: 30 }, { width: 14 }, { width: 14 }, { width: 30 }, { width: 12 },
     { width: 12 }, { width: 12 }, { width: 12 },
   ];
 
@@ -185,7 +215,7 @@ function addSummaryAndSignatures(sheet, startRow, rows) {
   });
 }
 
-async function buildPdf(rows, totals, from, to) {
+async function buildPdf(rows, totals, salesReceiptRows, salesReceiptTotals, from, to) {
   const { default: PDFDocument } = await import('pdfkit');
   const document = new PDFDocument({ layout: 'landscape', size: 'A4', margin: 24 });
   const chunks = [];
@@ -215,17 +245,60 @@ async function buildPdf(rows, totals, from, to) {
   rows.forEach((row) => drawRow([row.date, row.receiptNo, row.admissionNumber, row.studentName, row.details, row.cash ?? 0, row.chq ?? 0, row.cc ?? 0, row.dt ?? 0, row.myFees ?? 0, row.bank]));
   drawRow(['', '', '', '', 'TOTAL', totals.Cash, totals.Chq, totals.CC, totals.DT, totals['MY FEES'], ''], true);
 
-  document.y = y;
-  document.moveDown(2);
-  document.font('Helvetica-Bold').fontSize(10).text('BANK-WISE SUMMARY');
-  document.moveDown(0.5);
+  if (y > 390) { document.addPage(); y = 30; }
+  y += 24;
+  document.font('Helvetica-Bold').fontSize(10).text('SALES RECEIPTS', document.page.margins.left, y);
+  y += 18;
+  const salesWidths = [75, 55, 58, 100, 75, 90, 55, 55, 107];
+  const salesHeaders = ['Receipt Number', 'Receipt Date', 'Payment Mode', 'Customer Name', 'Admission Number', 'Deposit To', 'SubTotal', 'Total', 'Notes'];
+  const drawSalesRow = (values, bold = false) => {
+    let x = document.page.margins.left;
+    document.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(7);
+    values.forEach((value, index) => {
+      document.rect(x, y, salesWidths[index], 18).stroke();
+      document.text(String(value ?? (index >= 6 ? 0 : '')), x + 2, y + 5, { width: salesWidths[index] - 4, height: 12, ellipsis: true });
+      x += salesWidths[index];
+    });
+    y += 18;
+  };
+  drawSalesRow(salesHeaders, true);
+  salesReceiptRows.forEach((receipt) => drawSalesRow([
+    receipt.receiptNumber, receipt.receiptDate, receipt.paymentMode, receipt.customerName,
+    receipt.admissionNumber, receipt.depositTo, receipt.subTotal, receipt.total, receipt.notes,
+  ]));
+  drawSalesRow(['', '', '', '', '', 'TOTAL', salesReceiptTotals.SubTotal, salesReceiptTotals.Total, ''], true);
+
+  if (y > 430) { document.addPage(); y = 30; }
+  y += 24;
+  document.font('Helvetica-Bold').fontSize(10).text('BANK-WISE SUMMARY', document.page.margins.left, y);
+  y += 18;
+  const summaryWidths = [145, 55, 55, 55, 55, 70, 70];
+  const summaryHeaders = ['Bank', 'Cash', 'Chq', 'CC', 'DT', 'MY FEES', 'Total'];
+  const drawSummaryRow = (values, bold = false) => {
+    let x = document.page.margins.left;
+    document.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8);
+    values.forEach((value, index) => {
+      document.rect(x, y, summaryWidths[index], 18).stroke();
+      document.text(String(value ?? 0), x + 3, y + 5, { width: summaryWidths[index] - 6, height: 12, ellipsis: true });
+      x += summaryWidths[index];
+    });
+    y += 18;
+  };
+  drawSummaryRow(summaryHeaders, true);
   getBankSummary(rows).forEach(({ bank, values }) => {
     const amounts = [values.Cash, values.Chq, values.CC, values.DT, values['MY FEES']];
-    document.font('Helvetica').fontSize(9).text(`${bank}:  Cash ${amounts[0]}   Chq ${amounts[1]}   CC ${amounts[2]}   DT ${amounts[3]}   MY FEES ${amounts[4]}   Total ${amounts.reduce((sum, amount) => sum + amount, 0)}`);
+    drawSummaryRow([bank, ...amounts, amounts.reduce((sum, amount) => sum + amount, 0)]);
   });
-  document.moveDown(3);
-  document.font('Helvetica-Bold').fontSize(9).text('____________________                 ____________________                 ____________________');
-  document.text('REPORT GENERATED BY                         REPORT CHECKED BY                         AUTHORIZED BY');
+
+  y += 42;
+  const signatureWidth = 180;
+  const signatureGap = 54;
+  const signatureLabels = ['REPORT GENERATED BY', 'REPORT CHECKED BY', 'AUTHORIZED BY'];
+  signatureLabels.forEach((label, index) => {
+    const x = document.page.margins.left + index * (signatureWidth + signatureGap);
+    document.moveTo(x, y).lineTo(x + signatureWidth, y).stroke();
+    document.font('Helvetica-Bold').fontSize(8).text(label, x, y + 8, { width: signatureWidth, align: 'center' });
+  });
   document.end();
   await finished;
   return Buffer.concat(chunks);

@@ -77,6 +77,9 @@ You'll see:
   show zeroes instead of asterisks for empty payment columns, include a
   bank-wise summary, and leave space for the generated, checked, and
   authorized signatures.
+- Both the preview and downloads include a separate **SALES RECEIPTS** table
+  with Receipt Number, Receipt Date, Payment Mode, Customer Name, Admission
+  Number, Deposit To, SubTotal, Total, and Notes, followed by its own totals.
 
 The access key is remembered in that browser after the first entry (via
 `localStorage`) — "forget saved key" clears it.

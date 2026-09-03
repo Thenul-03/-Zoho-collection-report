@@ -162,5 +162,31 @@ export async function buildReportRows(from, to) {
     };
   });
 
-  return { rows, totals, count: payments.length };
+  const salesReceiptTotals = { SubTotal: 0, Total: 0 };
+  const salesReceiptRows = payments.map((payment) => {
+    const subTotal = Number(payment.sub_total ?? payment.amount) || 0;
+    const total = Number(payment.total ?? payment.amount) || 0;
+    salesReceiptTotals.SubTotal += subTotal;
+    salesReceiptTotals.Total += total;
+
+    return {
+      receiptNumber: payment.payment_number || payment.reference_number || '',
+      receiptDate: payment.date || '',
+      paymentMode: payment.payment_mode || '',
+      customerName: payment.customer_name || '',
+      admissionNumber: admissionNumbers[payment.customer_id] || '',
+      depositTo: payment.account_name || '',
+      subTotal,
+      total,
+      notes: payment.notes || payment.description || '',
+    };
+  });
+
+  return {
+    rows,
+    totals,
+    count: payments.length,
+    salesReceiptRows,
+    salesReceiptTotals,
+  };
 }
