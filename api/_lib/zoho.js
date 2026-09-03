@@ -194,6 +194,7 @@ export async function buildReportRows(from, to) {
       studentName: payment.customer_name || '',
       reference: payment.reference_number || '',
       details: payment.description || payment.notes || '',
+      column,
       cash: column === 'Cash' ? amount : null,
       chq: column === 'Chq' ? amount : null,
       cc: column === 'CC' ? amount : null,

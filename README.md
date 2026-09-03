@@ -73,8 +73,11 @@ You'll see:
 - **Preview Report** — loads the data into an on-page table (via
   `/api/preview`, JSON only, no file) so you can sanity-check totals and
   admission numbers before generating anything.
-- **Download Excel** — generates and downloads the actual `.xlsx` for
-  whatever range is currently selected, in your school's template layout.
+- **Export format** — choose Excel (`.xlsx`) or PDF (`.pdf`) before downloading.
+  Both formats include the payment summary, payment receipt details, and sales
+  receipt details for the selected range.
+- **Payment summary** — the preview shows receipt counts and collected amounts
+  grouped by Cash, Chq, CC, DT, and MY FEES, followed by the detailed tables.
 
 The access key is remembered in that browser after the first entry (via
 `localStorage`) — "forget saved key" clears it.
@@ -84,6 +87,8 @@ The access key is remembered in that browser after the first entry (via
 ```
 https://your-project.vercel.app/api/report?key=YOUR_REPORT_ACCESS_KEY&from=2026-09-01&to=2026-09-01
 ```
+
+Add `&format=pdf` to that URL for a PDF; Excel remains the default format.
 
 ## 5b. If Admission Number comes back blank
 

@@ -1,8 +1,9 @@
 import ExcelJS from 'exceljs';
+import PDFDocument from 'pdfkit';
 import { getAccessToken, fetchAllPayments, buildReportRows } from './_lib/zoho.js';
 
 export default async function handler(req, res) {
-  const { key, from, to, debug } = req.query;
+  const { key, from, to, debug, format = 'xlsx' } = req.query;
 
   if (!process.env.REPORT_ACCESS_KEY || key !== process.env.REPORT_ACCESS_KEY) {
     res.status(401).send('Unauthorized. Pass the correct ?key= value.');
@@ -34,6 +35,15 @@ export default async function handler(req, res) {
     }
 
     const { rows, totals, salesReceiptRows, salesReceiptTotal } = await buildReportRows(from, to);
+
+    if (format === 'pdf') {
+      const buffer = await buildPdf(rows, totals, salesReceiptRows, salesReceiptTotal, from, to);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="Daily_Collection_${from}_to_${to}.pdf"`);
+      res.status(200).send(buffer);
+      return;
+    }
+
     const buffer = await buildWorkbook(rows, totals, salesReceiptRows, salesReceiptTotal, from, to);
 
     res.setHeader(
@@ -49,6 +59,76 @@ export default async function handler(req, res) {
     console.error(err);
     res.status(500).send('Error generating report: ' + err.message);
   }
+}
+
+function buildPdf(rows, totals, salesReceiptRows, salesReceiptTotal, from, to) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ layout: 'landscape', size: 'A4', margin: 28 });
+    const chunks = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const formatAmount = (amount) => Number(amount || 0).toLocaleString();
+    const drawHeader = (title) => {
+      doc.fontSize(14).font('Helvetica-Bold').text('WYCHERLEY INTERNATIONAL SCHOOL (PVT) LTD');
+      doc.fontSize(9).font('Helvetica').text('NO. 232, BAUDDHALOKA MAWATHA, COLOMBO 07');
+      doc.fontSize(11).font('Helvetica-Bold').text(`${title} - ${from} to ${to}`);
+      doc.moveDown(0.8);
+    };
+    const drawTable = (headers, data, widths) => {
+      const rowHeight = 18;
+      const drawRow = (values, header = false) => {
+        if (doc.y + rowHeight > doc.page.height - doc.page.margins.bottom) doc.addPage();
+        const y = doc.y;
+        let x = doc.page.margins.left;
+        doc.font(header ? 'Helvetica-Bold' : 'Helvetica').fontSize(7);
+        values.forEach((value, index) => {
+          const width = widths[index];
+          doc.rect(x, y, width, rowHeight).stroke('#999');
+          doc.text(String(value ?? ''), x + 3, y + 5, { width: width - 6, height: rowHeight - 4, ellipsis: true });
+          x += width;
+        });
+        doc.y = y + rowHeight;
+      };
+      drawRow(headers, true);
+      data.forEach((row) => drawRow(row));
+    };
+
+    drawHeader('DAILY CASH COLLECTION REPORT');
+    doc.fontSize(11).font('Helvetica-Bold').text('PAYMENT SUMMARY');
+    const modes = ['Cash', 'Chq', 'CC', 'DT', 'MY FEES'];
+    const paymentCounts = Object.fromEntries(modes.map((mode) => [mode, 0]));
+    rows.forEach((row) => {
+      const mode = row.cash !== null ? 'Cash' : row.chq !== null ? 'Chq' : row.cc !== null ? 'CC' : row.dt !== null ? 'DT' : row.myFees !== null ? 'MY FEES' : null;
+      if (mode) paymentCounts[mode]++;
+    });
+    drawTable(
+      ['Payment Mode', 'Receipts', 'Amount'],
+      modes.map((mode) => [mode, paymentCounts[mode], formatAmount(totals[mode])])
+        .concat([['TOTAL', rows.length, formatAmount(Object.values(totals).reduce((sum, amount) => sum + Number(amount || 0), 0))]]),
+      [pageWidth * 0.35, pageWidth * 0.2, pageWidth * 0.25]
+    );
+    doc.moveDown(1);
+
+    doc.fontSize(11).font('Helvetica-Bold').text('PAYMENTS RECEIVED');
+    drawTable(
+      ['Date', 'Receipt No', 'Admission No.', 'Student Name', 'Details', 'Cash', 'Chq', 'CC', 'DT', 'MY FEES', 'Bank'],
+      rows.map((row) => [row.date, row.receiptNo, row.admissionNumber || '*', row.studentName || '*', row.details || '*', formatAmount(row.cash), formatAmount(row.chq), formatAmount(row.cc), formatAmount(row.dt), formatAmount(row.myFees), row.bank]),
+      [55, 65, 62, 95, 120, 48, 48, 48, 48, 55, 58]
+    );
+
+    doc.addPage();
+    drawHeader('SALES RECEIPTS');
+    drawTable(
+      ['Receipt Number', 'Receipt Date', 'Payment Mode', 'Customer Name', 'Admission No.', 'Deposit To', 'SubTotal', 'Total', 'Notes'],
+      salesReceiptRows.map((row) => [row.receiptNumber, row.date, row.paymentMode, row.customerName, row.admissionNumber || '*', row.depositTo, formatAmount(row.subTotal), formatAmount(row.total), row.notes]),
+      [75, 62, 70, 105, 65, 75, 60, 60, 160]
+    );
+    doc.font('Helvetica-Bold').fontSize(8).text(`TOTAL SALES RECEIPTS: ${salesReceiptRows.length}    ${formatAmount(salesReceiptTotal)}`);
+    doc.end();
+  });
 }
 
 async function buildWorkbook(rows, totals, salesReceiptRows, salesReceiptTotal, from, to) {

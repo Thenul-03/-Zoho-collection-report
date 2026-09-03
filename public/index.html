@@ -59,6 +59,8 @@
   .num { text-align: right; }
   .tfoot td { font-weight: 700; background: #1c212b; }
   .scroll-wrap { max-height: 420px; overflow: auto; border-radius: 8px; }
+  .summary-table { max-width: 620px; margin-bottom: 18px; }
+  .summary-table th, .summary-table td { padding: 7px 10px; }
 
   .forget { font-size: 12px; color: #888; cursor: pointer; text-decoration: underline; }
 </style>
@@ -101,6 +103,11 @@
     </div>
 
     <button class="primary" id="previewBtn">Preview Report</button>
+    <label for="exportFormat" style="display:inline-block; margin-left:4px;">Export format</label>
+    <select id="exportFormat" style="width:auto; min-width:130px; display:inline-block; margin-top:16px;">
+      <option value="xlsx">Excel (.xlsx)</option>
+      <option value="pdf">PDF (.pdf)</option>
+    </select>
     <button class="secondary" id="downloadBtn">Download Excel</button>
     <span class="forget" id="forgetKey">forget saved key</span>
     <div id="status"></div>
@@ -108,6 +115,11 @@
 
   <div class="panel" id="resultsPanel" style="display:none;">
     <h3 style="margin-top:0;">Payments Received</h3>
+    <table class="summary-table" id="paymentSummaryTable">
+      <thead><tr><th>Payment Mode</th><th class="num">Receipts</th><th class="num">Amount</th></tr></thead>
+      <tbody id="paymentSummaryBody"></tbody>
+      <tfoot id="paymentSummaryFoot"></tfoot>
+    </table>
     <div class="scroll-wrap">
       <table id="resultsTable">
         <thead>
@@ -152,6 +164,10 @@
     const resultsPanel = document.getElementById('resultsPanel');
     const resultsBody = document.getElementById('resultsBody');
     const resultsFoot = document.getElementById('resultsFoot');
+    const paymentSummaryBody = document.getElementById('paymentSummaryBody');
+    const paymentSummaryFoot = document.getElementById('paymentSummaryFoot');
+    const exportFormatEl = document.getElementById('exportFormat');
+    const downloadBtn = document.getElementById('downloadBtn');
 
     const savedKey = localStorage.getItem('reportAccessKey');
     if (savedKey) keyEl.value = savedKey;
@@ -250,6 +266,27 @@
       return n === null || n === undefined ? '*' : Number(n).toLocaleString();
     }
 
+    function renderPaymentSummary(rows, totals) {
+      const summary = { Cash: 0, Chq: 0, CC: 0, DT: 0, 'MY FEES': 0 };
+      rows.forEach((row) => {
+        if (row.column && Object.prototype.hasOwnProperty.call(summary, row.column)) {
+          summary[row.column] += 1;
+        }
+      });
+      paymentSummaryBody.innerHTML = Object.keys(summary).map((mode) => `
+        <tr><td>${mode}</td><td class="num">${summary[mode].toLocaleString()}</td>
+        <td class="num">${fmt(totals[mode])}</td></tr>
+      `).join('');
+      paymentSummaryFoot.innerHTML = `
+        <tr class="tfoot"><td>TOTAL</td><td class="num">${rows.length.toLocaleString()}</td>
+        <td class="num">${Object.values(totals).reduce((sum, amount) => sum + Number(amount || 0), 0).toLocaleString()}</td></tr>
+      `;
+    }
+
+    exportFormatEl.addEventListener('change', () => {
+      downloadBtn.textContent = exportFormatEl.value === 'pdf' ? 'Download PDF' : 'Download Excel';
+    });
+
     document.getElementById('previewBtn').addEventListener('click', async () => {
       const key = getKey();
       const { from, to } = getRange();
@@ -267,6 +304,7 @@
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error || 'Failed to load preview');
 
+        renderPaymentSummary(data.rows, data.totals);
         resultsBody.innerHTML = data.rows.map((r) => `
           <tr>
             <td>${r.date}</td><td>${r.receiptNo}</td><td>${r.admissionNumber || '*'}</td>
@@ -329,7 +367,7 @@
         statusEl.className = 'error';
         return;
       }
-      window.location.href = `/api/report?key=${encodeURIComponent(key)}&from=${from}&to=${to}`;
+      window.location.href = `/api/report?key=${encodeURIComponent(key)}&from=${from}&to=${to}&format=${exportFormatEl.value}`;
     });
   </script>
 </body>
