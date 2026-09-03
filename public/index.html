@@ -4,7 +4,6 @@
 <meta charset="UTF-8" />
 <title>Daily Collection Report</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 <style>
   :root { color-scheme: dark; }
   body {
@@ -39,7 +38,6 @@
   }
   .row { display: flex; gap: 14px; flex-wrap: wrap; }
   .row > div { flex: 1; min-width: 160px; }
-  .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
   button {
     padding: 10px 18px; font-size: 14px; font-weight: 600; border: none;
@@ -61,17 +59,8 @@
   .num { text-align: right; }
   .tfoot td { font-weight: 700; background: #1c212b; }
   .scroll-wrap { max-height: 420px; overflow: auto; border-radius: 8px; }
-  .section-title { margin: 0 0 10px; font-size: 14px; }
 
   .forget { font-size: 12px; color: #888; cursor: pointer; text-decoration: underline; }
-  @media (max-width: 600px) {
-    body { margin: 20px auto; padding: 0 12px; }
-    .topbar { display: block; }
-    .topbar .badge { display: inline-block; margin-top: 10px; }
-    .panel { padding: 14px; }
-    .actions { align-items: stretch; }
-    .actions button, .actions select { margin-top: 10px; }
-  }
 </style>
 </head>
 <body>
@@ -111,20 +100,14 @@
       </div>
     </div>
 
-    <div class="actions">
-      <button class="primary" id="previewBtn">Preview Report</button>
-      <select id="downloadFormat" aria-label="Download format" style="width:auto; display:inline-block; margin-top:16px;">
-        <option value="excel">Excel</option>
-        <option value="pdf">PDF</option>
-      </select>
-      <button class="secondary" id="downloadBtn">Download</button>
-      <span class="forget" id="forgetKey">forget saved key</span>
-    </div>
+    <button class="primary" id="previewBtn">Preview Report</button>
+    <button class="secondary" id="downloadBtn">Download Excel</button>
+    <span class="forget" id="forgetKey">forget saved key</span>
     <div id="status"></div>
   </div>
 
   <div class="panel" id="resultsPanel" style="display:none;">
-    <h2 class="section-title">Payments</h2>
+    <h3 style="margin-top:0;">Payments Received</h3>
     <div class="scroll-wrap">
       <table id="resultsTable">
         <thead>
@@ -138,18 +121,21 @@
         <tfoot id="resultsFoot"></tfoot>
       </table>
     </div>
-    <h2 class="section-title" style="margin-top:24px;">Sales Receipts</h2>
+  </div>
+
+  <div class="panel" id="srResultsPanel" style="display:none;">
+    <h3 style="margin-top:0;">Sales Receipts</h3>
     <div class="scroll-wrap">
-      <table id="salesReceiptsTable">
+      <table id="srResultsTable">
         <thead>
           <tr>
             <th>Receipt Number</th><th>Receipt Date</th><th>Payment Mode</th>
-            <th>Customer Name</th><th>Admission Number</th><th>Deposit To</th>
+            <th>Customer Name</th><th>Admission No.</th><th>Deposit To</th>
             <th class="num">SubTotal</th><th class="num">Total</th><th>Notes</th>
           </tr>
         </thead>
-        <tbody id="salesReceiptsBody"></tbody>
-        <tfoot id="salesReceiptsFoot"></tfoot>
+        <tbody id="srResultsBody"></tbody>
+        <tfoot id="srResultsFoot"></tfoot>
       </table>
     </div>
   </div>
@@ -166,9 +152,6 @@
     const resultsPanel = document.getElementById('resultsPanel');
     const resultsBody = document.getElementById('resultsBody');
     const resultsFoot = document.getElementById('resultsFoot');
-    const salesReceiptsBody = document.getElementById('salesReceiptsBody');
-    const salesReceiptsFoot = document.getElementById('salesReceiptsFoot');
-    const downloadFormatEl = document.getElementById('downloadFormat');
 
     const savedKey = localStorage.getItem('reportAccessKey');
     if (savedKey) keyEl.value = savedKey;
@@ -176,7 +159,7 @@
     document.getElementById('forgetKey').addEventListener('click', () => {
       localStorage.removeItem('reportAccessKey');
       keyEl.value = '';
-      badgeEl.textContent = 'Checking connection…';
+      badgeEl.textContent = 'Enter access key';
       badgeEl.className = 'badge pending';
     });
 
@@ -256,10 +239,15 @@
       }
     }
     keyEl.addEventListener('change', checkConnection);
-    if (savedKey) checkConnection();
+    if (savedKey) {
+      checkConnection();
+    } else {
+      badgeEl.textContent = 'Enter access key';
+      badgeEl.className = 'badge pending';
+    }
 
     function fmt(n) {
-      return n === null || n === undefined ? '0' : Number(n).toLocaleString();
+      return n === null || n === undefined ? '*' : Number(n).toLocaleString();
     }
 
     document.getElementById('previewBtn').addEventListener('click', async () => {
@@ -281,8 +269,8 @@
 
         resultsBody.innerHTML = data.rows.map((r) => `
           <tr>
-            <td>${r.date}</td><td>${r.receiptNo}</td><td>${r.admissionNumber || ''}</td>
-            <td>${r.studentName || ''}</td><td>${r.details || ''}</td>
+            <td>${r.date}</td><td>${r.receiptNo}</td><td>${r.admissionNumber || '*'}</td>
+            <td>${r.studentName || '*'}</td><td>${r.details || '*'}</td>
             <td class="num">${fmt(r.cash)}</td><td class="num">${fmt(r.chq)}</td>
             <td class="num">${fmt(r.cc)}</td><td class="num">${fmt(r.dt)}</td>
             <td class="num">${fmt(r.myFees)}</td><td>${r.bank}</td>
@@ -293,36 +281,40 @@
         resultsFoot.innerHTML = `
           <tr class="tfoot">
             <td colspan="5">TOTAL (${data.count} receipts)</td>
-            <td class="num">${t.Cash.toLocaleString()}</td>
-            <td class="num">${t.Chq.toLocaleString()}</td>
-            <td class="num">${t.CC.toLocaleString()}</td>
-            <td class="num">${t.DT.toLocaleString()}</td>
-            <td class="num">${t['MY FEES'].toLocaleString()}</td>
-            <td></td>
-          </tr>
-        `;
-
-        salesReceiptsBody.innerHTML = data.salesReceiptRows.map((receipt) => `
-          <tr>
-            <td>${receipt.receiptNumber}</td><td>${receipt.receiptDate}</td>
-            <td>${receipt.paymentMode}</td><td>${receipt.customerName}</td>
-            <td>${receipt.admissionNumber || ''}</td><td>${receipt.depositTo}</td>
-            <td class="num">${fmt(receipt.subTotal)}</td><td class="num">${fmt(receipt.total)}</td>
-            <td>${receipt.notes || ''}</td>
-          </tr>
-        `).join('');
-
-        salesReceiptsFoot.innerHTML = `
-          <tr class="tfoot">
-            <td colspan="6">TOTAL (${data.salesReceiptRows.length} receipts)</td>
-            <td class="num">${fmt(data.salesReceiptTotals.SubTotal)}</td>
-            <td class="num">${fmt(data.salesReceiptTotals.Total)}</td>
+            <td class="num">${t.Cash ? t.Cash.toLocaleString() : '-'}</td>
+            <td class="num">${t.Chq ? t.Chq.toLocaleString() : '-'}</td>
+            <td class="num">${t.CC ? t.CC.toLocaleString() : '-'}</td>
+            <td class="num">${t.DT ? t.DT.toLocaleString() : '-'}</td>
+            <td class="num">${t['MY FEES'] ? t['MY FEES'].toLocaleString() : '-'}</td>
             <td></td>
           </tr>
         `;
 
         resultsPanel.style.display = 'block';
-        statusEl.textContent = `Loaded ${data.count} receipt(s).`;
+
+        const srResultsPanel = document.getElementById('srResultsPanel');
+        const srBody = document.getElementById('srResultsBody');
+        const srFoot = document.getElementById('srResultsFoot');
+
+        srBody.innerHTML = (data.salesReceiptRows || []).map((sr) => `
+          <tr>
+            <td>${sr.receiptNumber}</td><td>${sr.date}</td><td>${sr.paymentMode}</td>
+            <td>${sr.customerName}</td><td>${sr.admissionNumber || '*'}</td><td>${sr.depositTo}</td>
+            <td class="num">${fmt(sr.subTotal)}</td><td class="num">${fmt(sr.total)}</td><td>${sr.notes || ''}</td>
+          </tr>
+        `).join('');
+
+        srFoot.innerHTML = `
+          <tr class="tfoot">
+            <td colspan="7">TOTAL (${data.salesReceiptCount || 0} receipts)</td>
+            <td class="num">${(data.salesReceiptTotal || 0).toLocaleString()}</td>
+            <td></td>
+          </tr>
+        `;
+
+        srResultsPanel.style.display = 'block';
+
+        statusEl.textContent = `Loaded ${data.count} payment(s) and ${data.salesReceiptCount || 0} sales receipt(s).`;
       } catch (e) {
         statusEl.textContent = e.message;
         statusEl.className = 'error';
@@ -337,8 +329,7 @@
         statusEl.className = 'error';
         return;
       }
-      const format = downloadFormatEl.value;
-      window.location.href = `/api/report?key=${encodeURIComponent(key)}&from=${from}&to=${to}&format=${format}`;
+      window.location.href = `/api/report?key=${encodeURIComponent(key)}&from=${from}&to=${to}`;
     });
   </script>
 </body>

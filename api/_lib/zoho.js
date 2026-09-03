@@ -111,13 +111,46 @@ export async function fetchAllPayments(accessToken, from, to) {
   return all;
 }
 
-// Admission Number lives on the Customer/Contact record's custom fields,
-// not on the payment itself — fetch each distinct customer once and cache.
-export async function fetchAdmissionNumbers(accessToken, payments) {
+export async function fetchAllSalesReceipts(accessToken, from, to) {
   const apiDomain = process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com';
   const orgId = process.env.ZOHO_ORGANIZATION_ID;
 
-  const uniqueCustomerIds = [...new Set(payments.map((p) => p.customer_id).filter(Boolean))];
+  let page = 1;
+  let all = [];
+
+  while (true) {
+    const url =
+      `${apiDomain}/books/v3/salesreceipts?organization_id=${orgId}` +
+      `&date_start=${from}&date_end=${to}&page=${page}&per_page=200&sort_column=date`;
+
+    const resp = await fetch(url, {
+      headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+    });
+    const data = await resp.json();
+
+    if (data.code !== 0) {
+      throw new Error('Zoho API error fetching sales receipts: ' + JSON.stringify(data));
+    }
+
+    all = all.concat(data.salesreceipts || []);
+
+    if (!data.page_context || !data.page_context.has_more_page) break;
+    page++;
+  }
+
+  return all;
+}
+
+// Admission Number lives on the Customer/Contact record's custom fields,
+// not on the payment/receipt itself — fetch each distinct customer once and
+// cache. Accepts any list of records that have a .customer_id, so it works
+// for both payments and sales receipts (and can be called with the combined
+// set to fetch each customer only once across both tables).
+export async function fetchAdmissionNumbers(accessToken, records) {
+  const apiDomain = process.env.ZOHO_API_DOMAIN || 'https://www.zohoapis.com';
+  const orgId = process.env.ZOHO_ORGANIZATION_ID;
+
+  const uniqueCustomerIds = [...new Set(records.map((r) => r.customer_id).filter(Boolean))];
   const result = {};
 
   for (const customerId of uniqueCustomerIds) {
@@ -134,11 +167,19 @@ export async function fetchAdmissionNumbers(accessToken, payments) {
 }
 
 // Builds the flat row objects used by both the on-screen preview and the
-// Excel export, so the two never drift out of sync.
+// Excel export, so the two never drift out of sync. Returns two separate
+// tables — payments and sales receipts — as your daily collection combines
+// both, but you asked for them kept apart rather than merged into one list.
 export async function buildReportRows(from, to) {
   const accessToken = await getAccessToken();
-  const payments = await fetchAllPayments(accessToken, from, to);
-  const admissionNumbers = await fetchAdmissionNumbers(accessToken, payments);
+  const [payments, salesReceipts] = await Promise.all([
+    fetchAllPayments(accessToken, from, to),
+    fetchAllSalesReceipts(accessToken, from, to),
+  ]);
+
+  // Look up Admission Number once per customer across BOTH tables combined,
+  // so a student appearing in both isn't fetched twice.
+  const admissionNumbers = await fetchAdmissionNumbers(accessToken, [...payments, ...salesReceipts]);
 
   const totals = { Cash: 0, Chq: 0, CC: 0, DT: 0, 'MY FEES': 0 };
   const rows = payments.map((payment) => {
@@ -162,23 +203,24 @@ export async function buildReportRows(from, to) {
     };
   });
 
-  const salesReceiptTotals = { SubTotal: 0, Total: 0 };
-  const salesReceiptRows = payments.map((payment) => {
-    const subTotal = Number(payment.sub_total ?? payment.amount) || 0;
-    const total = Number(payment.total ?? payment.amount) || 0;
-    salesReceiptTotals.SubTotal += subTotal;
-    salesReceiptTotals.Total += total;
+  // Sales Receipt columns match your sample export, minus every column that
+  // came back empty in it (Supply Date, Reference#, Terms & Conditions, etc).
+  let salesReceiptTotal = 0;
+  const salesReceiptRows = salesReceipts.map((sr) => {
+    const total = Number(sr.total ?? sr.sub_total) || 0;
+    salesReceiptTotal += total;
 
     return {
-      receiptNumber: payment.payment_number || payment.reference_number || '',
-      receiptDate: payment.date || '',
-      paymentMode: payment.payment_mode || '',
-      customerName: payment.customer_name || '',
-      admissionNumber: admissionNumbers[payment.customer_id] || '',
-      depositTo: payment.account_name || '',
-      subTotal,
+      receiptNumber: sr.salesreceipt_number || sr.receipt_number || sr.salesreceipt_id || '',
+      date: sr.date || '',
+      paymentMode: sr.payment_mode || '',
+      customerName: sr.customer_name || '',
+      admissionNumber: admissionNumbers[sr.customer_id] || '',
+      depositTo: bankLabelForAccount(sr.account_name),
+      subTotal: Number(sr.sub_total) || 0,
       total,
-      notes: payment.notes || payment.description || '',
+      notes: sr.notes || '',
+      location: sr.location_name || '',
     };
   });
 
@@ -187,6 +229,7 @@ export async function buildReportRows(from, to) {
     totals,
     count: payments.length,
     salesReceiptRows,
-    salesReceiptTotals,
+    salesReceiptTotal,
+    salesReceiptCount: salesReceipts.length,
   };
 }
