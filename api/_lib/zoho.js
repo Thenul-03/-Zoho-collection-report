@@ -132,7 +132,7 @@ export async function fetchAllSalesReceipts(accessToken, from, to) {
       throw new Error('Zoho API error fetching sales receipts: ' + JSON.stringify(data));
     }
 
-    all = all.concat(data.salesreceipts || []);
+    all = all.concat(data.sales_receipts || []);
 
     if (!data.page_context || !data.page_context.has_more_page) break;
     page++;
@@ -223,8 +223,8 @@ export async function buildReportRows(from, to) {
       paymentMode: sr.payment_mode || '',
       customerName: sr.customer_name || '',
       admissionNumber: admissionNumbers[sr.customer_id] || '',
-      depositTo: bankLabelForAccount(sr.account_name),
-      subTotal: Number(sr.sub_total) || 0,
+      depositTo: '*',
+      subTotal: total,
       total,
       notes: sr.notes || '',
       location: sr.location_name || '',
